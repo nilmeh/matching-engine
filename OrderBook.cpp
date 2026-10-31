@@ -3,9 +3,11 @@
 
 std::vector<ExecutionReport> OrderBook::addLimitOrder(Order&& order) {
     std::vector<ExecutionReport> reports;
+    if (order.quantity == 0 || locations.contains(order.id)) return reports;
     uint32_t remaining = order.quantity;
     matchAgainstBook(order.side, order.price, remaining, order.id, reports);
     if (remaining > 0) {
+        order.quantity = remaining;
         if (order.side == Side::BUY) {
             bids[order.price].push_back(order);
             locations[order.id] = OrderLocation{std::prev(bids[order.price].end()), order.side, order.price};
@@ -79,6 +81,10 @@ ModifyResult OrderBook::modifyOrder(uint64_t id, int64_t newPrice, uint32_t newQ
         result.success = false;
         return result;
     }
+    if (newQuantity == 0) {
+        result.success = false;
+        return result;
+    }
     OrderLocation loc = locIt -> second;
     Order& order = *loc.it;
     
@@ -102,15 +108,7 @@ void OrderBook::matchAgainstBook(Side side, int64_t price, uint32_t& remaining, 
         auto lowest = asks.begin();
         while (!asks.empty() && lowest != asks.end() && lowest -> first <= price) {
             uint32_t fill_qty = std::min(lowest -> second.front().quantity, remaining);
-            ExecutionReport report {
-                incomingId,
-                lowest -> second.front().id,
-                lowest -> first,
-                fill_qty,
-                std::chrono::steady_clock::now(),
-                Side::BUY
-            };
-            reports.push_back(report);
+            reports.emplace_back(incomingId, lowest -> second.front().id, lowest -> first, fill_qty, std::chrono::steady_clock::now(), Side::BUY);
             remaining -= fill_qty;
             lowest -> second.front().quantity -= fill_qty;
             if (lowest -> second.front().quantity == 0){
@@ -134,15 +132,7 @@ void OrderBook::matchAgainstBook(Side side, int64_t price, uint32_t& remaining, 
         auto highest = bids.begin();
         while (!bids.empty() && highest != bids.end() && highest -> first >= price) {
             uint32_t fill_qty = std::min(highest -> second.front().quantity, remaining);
-            ExecutionReport report {
-                highest -> second.front().id,
-                incomingId,
-                highest -> first,
-                fill_qty,
-                std::chrono::steady_clock::now(),
-                Side::SELL
-            };
-            reports.push_back(report);
+            reports.emplace_back(highest -> second.front().id, incomingId, highest -> first, fill_qty, std::chrono::steady_clock::now(), Side::SELL);
             remaining -= fill_qty;
             highest -> second.front().quantity -= fill_qty;
             if (highest -> second.front().quantity == 0){
@@ -164,8 +154,8 @@ void OrderBook::matchAgainstBook(Side side, int64_t price, uint32_t& remaining, 
     }
 }
 
-uint32_t OrderBook::getAvailableQuantity(Side side, int64_t price) {
-    uint32_t total_qty = 0;
+uint64_t OrderBook::getAvailableQuantity(Side side, int64_t price) {
+    uint64_t total_qty = 0;
     if (side == Side::BUY) {
         for (auto it = asks.begin(); it != asks.end(); ++it) {
             if(it -> first > price) {

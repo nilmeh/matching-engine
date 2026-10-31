@@ -2,6 +2,7 @@
 #include <chrono>
 #include <random>
 #include <vector>
+#include <algorithm>
 #include "Order.h"
 #include "OrderBook.h"
 
@@ -110,21 +111,46 @@ int main() {
     }
 
     size_t total_fills = 0;
-    auto start = std::chrono::steady_clock::now();
+    std::vector<double> latencies;
+latencies.reserve(N);
 
+for (int i = 0; i < N; i++) {
+    auto start = std::chrono::steady_clock::now();
+    auto reports = book.addLimitOrder(std::move(orders[i]));
+    auto end = std::chrono::steady_clock::now();
+    
+    total_fills += reports.size();
+    latencies.push_back(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count()
+    );
+}
+
+std::sort(latencies.begin(), latencies.end());
+
+std::cout << "p50:  " << latencies[N * 0.50] << " ns\n";
+std::cout << "p99:  " << latencies[N * 0.99] << " ns\n";
+std::cout << "p99.9:" << latencies[N * 0.999] << " ns\n";
+std::cout << "max:  " << latencies[N - 1] << " ns\n";
+
+    // --- throughput run: time the whole loop, no per-call clock reads ---
+    OrderBook book_tp;
+    std::vector<Order> orders_tp;
+    orders_tp.reserve(N);
     for (int i = 0; i < N; i++) {
-        auto reports = book.addLimitOrder(std::move(orders[i]));
-        total_fills += reports.size();
+        Side side = side_dist(rng) == 0 ? Side::BUY : Side::SELL;
+        orders_tp.push_back(Order{
+            static_cast<uint64_t>(i + 1), side, price_dist(rng), qty_dist(rng),
+            std::chrono::steady_clock::now()
+        });
     }
 
-    auto end = std::chrono::steady_clock::now();
-    auto micros = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-
-    std::cout << "Orders:      " << N << "\n";
-    std::cout << "Total fills: " << total_fills << "\n";
-    std::cout << "Time:        " << micros << " microseconds\n";
-    std::cout << "Throughput:  " << (N / (micros / 1000000.0)) << " orders/second\n";
-    std::cout << "Avg latency: " << (micros * 1000.0 / N) << " nanoseconds/order\n";
+    size_t fills_tp = 0;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < N; i++) {
+        fills_tp += book_tp.addLimitOrder(std::move(orders_tp[i])).size();
+    }
+    double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    std::cout << "throughput: " << N / secs << " orders/sec (fills: " << fills_tp << ")\n";
 
     return 0;
 }

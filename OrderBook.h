@@ -9,6 +9,7 @@
 #include "Order.h"
 #include "ExecutionReport.h"
 #include "ModifyResult.h"
+#include <memory_resource>
 
 class OrderBook {
     public:
@@ -22,14 +23,17 @@ class OrderBook {
         ModifyResult modifyOrder(uint64_t id, int64_t newPrice, uint32_t newQuantity);
     private:
         struct OrderLocation {
-            std::list<Order>::iterator it;
+            std::pmr::list<Order>::iterator it;
             Side side;
             int64_t price;
         };
 
-        std::map<int64_t, std::list<Order>, std::greater<int64_t>> bids;
-        std::map<int64_t, std::list<Order>,  std::less<int64_t>> asks;
+        std::pmr::monotonic_buffer_resource mono{3200000};
+        std::pmr::unsynchronized_pool_resource pool{&mono};
+
+        std::pmr::map<int64_t, std::pmr::list<Order>, std::greater<int64_t>> bids{&pool};
+        std::pmr::map<int64_t, std::pmr::list<Order>,  std::less<int64_t>> asks{&pool};
         std::unordered_map<uint64_t, OrderLocation> locations; 
         void matchAgainstBook(Side side, int64_t price, uint32_t& remaining, uint64_t incomingId, std::vector<ExecutionReport>& reports);
-        uint32_t getAvailableQuantity(Side side, int64_t price);
+        uint64_t getAvailableQuantity(Side side, int64_t price);
 };

@@ -10,5 +10,4 @@ struct ExecutionReport {
     uint32_t quantity;
     std::chrono::steady_clock::time_point timestamp;
     Side aggressor;
-
 };

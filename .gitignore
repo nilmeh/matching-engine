@@ -1,0 +1,13 @@
+# build artifacts
+tests
+run
+tests_asan
+lob
+matching_engine
+benchmark_asan
+benchmark_debug
+*.dSYM/
+*.o
+.DS_Store
+.vscode/
+benchmark

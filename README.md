@@ -4,15 +4,15 @@ A single-threaded limit order book and matching engine in C++20 with price-time 
 
 > **Status: work in progress.** The core engine (matching, cancel, modify, order types) works and is tested, but I'm still optimizing it and haven't built everything I want to yet. See [Known limitations](#known-limitations) and [Next steps](#next-steps).
 
-On an Apple M2 Pro (`-O3`), replaying 1M random limit orders:
+Benchmark: replays 1M random limit orders (prices 9900–10100, quantity 1–100, random side, fixed seed, no cancels) on an Apple M2 Pro, `-O3`:
 
 | Metric | Result |
 |---|---|
-| p50 latency per order | ~83 ns |
+| p50 latency per order | ~83 ns (timer resolution on this machine is ~42 ns, so this is only accurate to about ±1 tick) |
 | p99 latency per order | ~330–375 ns |
-| Throughput | ~7.5–9M orders/sec |
+| Throughput | ~7.3–8.8M orders/sec |
 
-Numbers vary run to run (throughput ranged ~7.5–9M orders/sec across my runs). Reproduce them with `make bench`.
+Numbers vary run to run. Reproduce them with `make bench`. This workload has no cancels or modifies, so it is not representative of a real feed.
 
 ## Features
 
@@ -26,7 +26,7 @@ Numbers vary run to run (throughput ranged ~7.5–9M orders/sec across my runs).
 
 - Each side of the book is a `std::map` from price to a FIFO `std::list` of orders, ordered best-price-first (`greater` for bids, `less` for asks). Matching only ever touches the front of the best level.
 - An `unordered_map` from order id to `{list iterator, side, price}` means cancel and modify never scan a queue; they jump straight to the order.
-- The book's maps and lists use `std::pmr` containers backed by an unsynchronized pool on top of a monotonic buffer, so the hot path mostly avoids the global allocator.
+- The book's maps and lists use `std::pmr` containers backed by an unsynchronized pool on top of a monotonic buffer, which cuts allocator calls for book nodes. The id lookup `unordered_map` and the returned `std::vector<ExecutionReport>` still use the global allocator (about 1.4 heap allocations per order in my measurements).
 - FOK checks available liquidity at or better than the limit price *before* touching the book, so a killed order never leaves partial changes.
 
 ## Build and run
@@ -34,7 +34,7 @@ Numbers vary run to run (throughput ranged ~7.5–9M orders/sec across my runs).
 ```sh
 make test       # unit tests
 make test-asan  # same tests under AddressSanitizer + UBSan
-make bench   # runs main.cpp: modify/FOK demo output, then the latency and throughput benchmark (-O3)
+make bench      # runs main.cpp: modify/FOK demo output, then the latency and throughput benchmark (-O3)
 ```
 
 Requires a C++20 compiler (tested with Apple clang on macOS).
